@@ -1,24 +1,45 @@
 ---
-- name: Install ufw
+- name: install packages
   apt:
     name: ufw
     state: present
     update_cache: yes
 
-- name: Open node_exporter port
-  ufw:
-    rule: allow
-    proto: tcp
-    port: 9100
+- name: ufw already enabled
+  command: ufw status verbose
+  register: ufw_status_result
+  changed_when: False
+
+- name: open node_exporter port
+  command: ufw allow 9100/tcp
   when:
+    - not ufw_status_result.stdout is search("9100/tcp.*ALLOW IN.*Anywhere")
     - node_exporter|bool == true
 
-- name: Open ssh port
-  ufw:
-    rule: limit
-    port: '{{ ansible_port }}'
-    proto: tcp
+- name: open prometheus port
+  command: ufw allow {{custom_port_prefix}}660/tcp
+  when:
+    - not ufw_status_result.stdout is search("{{custom_port_prefix}}660/tcp.*ALLOW IN.*Anywhere")
 
-- name: Enable firewall
-  ufw:
-    state: enabled
+- name: open p2p port
+  command: ufw allow {{custom_port_prefix}}656/tcp
+  when:
+    - not ufw_status_result.stdout is search("{{custom_port_prefix}}656/tcp.*ALLOW IN.*Anywhere")
+
+- name: open rpc port (for relayer type only)
+  command: ufw allow {{custom_port_prefix}}657/tcp
+  when:
+    - not ufw_status_result.stdout is search("{{custom_port_prefix}}657/tcp.*ALLOW IN.*Anywhere") and type == 'relayer'
+
+- name: open ssh port
+  command: ufw allow {{ ssh_port }}/tcp
+  when:
+    - not ufw_status_result.stdout is search("{{ ssh_port }}/tcp.*ALLOW IN.*Anywhere")
+
+- name: enable firewall
+  shell: |
+    set -o pipefail
+    echo "y" | ufw enable
+  args:
+    executable: /bin/bash
+  when: not ufw_status_result.stdout is search("Status.* active")
